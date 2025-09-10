@@ -1,0 +1,7 @@
+// KQL: Failed requests (APIM)
+AzureDiagnostics
+| where ResourceProvider == "MICROSOFT.APIM"
+| where TimeGenerated > ago(24h)
+| where httpStatusCode >= 400
+| summarize count() by bin(TimeGenerated, 1h), httpStatusCode, requestUri_s
+| order by TimeGenerated desc

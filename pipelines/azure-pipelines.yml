@@ -1,0 +1,67 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  imageName: 'claimstatus'
+  acrName: '<ACR_NAME>'
+  azureSubscription: '<AZURE_SUBSCRIPTION_SERVICE_CONNECTION>'
+  resourceGroup: '<RESOURCE_GROUP>'
+
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.x'
+    - script: |
+        dotnet build src/ClaimStatusApi/ClaimStatusApi.csproj --configuration Release
+        dotnet publish src/ClaimStatusApi/ClaimStatusApi.csproj --configuration Release --output publish
+      displayName: 'Build and Publish'
+    - task: Docker@2
+      displayName: 'Build Docker Image'
+      inputs:
+        command: build
+        Dockerfile: src/ClaimStatusApi/Dockerfile
+        tags: $(imageName):$(Build.BuildId)
+        buildContext: .
+    - task: Docker@2
+      displayName: 'Tag Docker Image'
+      inputs:
+        command: tag
+        arguments: $(imageName):$(Build.BuildId) $(acrName).azurecr.io/$(imageName):$(Build.BuildId)
+    - task: Docker@2
+      displayName: 'Push Docker Image to ACR'
+      inputs:
+        command: push
+        arguments: $(acrName).azurecr.io/$(imageName):$(Build.BuildId)
+    - script: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+        ./trivy image --severity CRITICAL,HIGH --exit-code 1 $(acrName).azurecr.io/$(imageName):$(Build.BuildId) || exit 1
+      displayName: 'Run Trivy Image Scan'
+
+- stage: Deploy
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - deployment: Deploy
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az deployment group create -g $(resourceGroup) --template-file iac/main.bicep --parameters acrName=$(acrName) acaEnvName=aca-env acaAppName=claimstatusapi apimName=apim-service logAnalyticsName=log-analytics openAiKeyVaultName=openai-kv
+            displayName: 'Deploy Infrastructure with Bicep'

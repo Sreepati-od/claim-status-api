@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "uYH2lMIEfMA=",
+  "success": true,
+  "projectFilePath": "/Users/Sri/Documents/2B-Individual/src/ClaimStatusApi/ClaimStatusApi.csproj",
+  "expectedPackageFiles": [
+    "/Users/Sri/.nuget/packages/microsoft.aspnetcore.openapi/8.0.0/microsoft.aspnetcore.openapi.8.0.0.nupkg.sha512",
+    "/Users/Sri/.nuget/packages/microsoft.openapi/1.4.3/microsoft.openapi.1.4.3.nupkg.sha512"
+  ],
+  "logs": []
+}
