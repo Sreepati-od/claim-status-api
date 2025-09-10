@@ -116,4 +116,10 @@ resource keyVault 'Microsoft.KeyVault/vaults@2021-06-01-preview' = {
   }
 }
 
-// Role assignments, outputs, etc. can be added as needed.
+
+output acrName string = acr.name
+output acaEnvName string = acaEnv.name
+output acaAppName string = acaApp.name
+output apimName string = apim.name
+output logAnalyticsName string = logAnalytics.name
+output keyVaultName string = keyVault.name
