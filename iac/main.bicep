@@ -69,7 +69,7 @@ resource acaApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'AZURE_OPENAI_ENDPOINT'
               value: 'https://<your-openai-endpoint>'
-            },
+            }
             {
               name: 'AZURE_OPENAI_KEY'
               secretRef: 'AZURE_OPENAI_KEY'
