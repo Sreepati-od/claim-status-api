@@ -1,0 +1,84 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "actions": {
+      "Run_KQL_Query": {
+        "type": "ApiConnection",
+        "inputs": {
+          "host": {
+            "connection": {
+              "name": "@parameters('$connections')['azuremonitor']['connectionId']"
+            }
+          },
+          "method": "get",
+          "path": "/v1/workspaces/{workspaceId}/query",
+          "queries": {
+            "query": "AppRequests | where Duration > 2000 | summarize count() by bin(TimeGenerated, 5m) | where count_ > 5"
+          }
+        },
+        "runAfter": {},
+        "metadata": {"operationMetadataId": "kql-query"}
+      },
+      "Condition": {
+        "type": "If",
+        "expression": {
+          "and": [
+            {
+              "greater": [
+                "@length(body('Run_KQL_Query')?['tables']?[0]?['rows'])",
+                0
+              ]
+            }
+          ]
+        },
+        "actions": {
+          "Send_Email": {
+            "type": "ApiConnection",
+            "inputs": {
+              "host": {
+                "connection": {
+                  "name": "@parameters('$connections')['office365']['connectionId']"
+                }
+              },
+              "method": "post",
+              "path": "/v2/Mail",
+              "body": {
+                "To": "<your-alert-email@domain.com>",
+                "Subject": "High Latency Detected in ClaimStatus API",
+                "Body": "An anomaly was detected in API latency. Please check Log Analytics."
+              }
+            },
+            "runAfter": {}
+          }
+        },
+        "else": {}
+      }
+    },
+    "triggers": {
+      "Recurrence": {
+        "type": "Recurrence",
+        "recurrence": {
+          "frequency": "Minute",
+          "interval": 5
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "parameters": {
+    "$connections": {
+      "value": {
+        "azuremonitor": {
+          "connectionId": "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Web/connections/azuremonitor-1",
+          "connectionName": "azuremonitor-1",
+          "id": "/subscriptions/<sub-id>/providers/Microsoft.Web/locations/<region>/managedApis/azuremonitor"
+        },
+        "office365": {
+          "connectionId": "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Web/connections/office365-1",
+          "connectionName": "office365-1",
+          "id": "/subscriptions/<sub-id>/providers/Microsoft.Web/locations/<region>/managedApis/office365"
+        }
+      }
+    }
+  }
+}

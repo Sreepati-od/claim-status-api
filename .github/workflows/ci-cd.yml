@@ -1,0 +1,110 @@
+name: CI-CD-ClaimStatusAPI
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+  AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+  AZURE_OPENAI_DEPLOYMENT: gpt-4o-mini
+  AZD_ENV_NAME: dev
+  APIM_PUBLISHER_EMAIL: admin@contoso.com
+  APIM_PUBLISHER_NAME: Contoso
+  IMAGE_NAME: claimstatusapi
+  IMAGE_TAG: ${{ github.run_number }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy Infra (Bicep)
+        run: |
+          az deployment group create \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --template-file iac/main.bicep \
+            --parameters \
+              azdEnvName=$AZD_ENV_NAME \
+              claimStatusApiImage=dummy \
+              claimStatusApiPort=80 \
+              logAnalyticsRetention=30 \
+              apimPublisherEmail=$APIM_PUBLISHER_EMAIL \
+              apimPublisherName=$APIM_PUBLISHER_NAME
+          ACR_LOGIN_SERVER=$(az deployment group show --resource-group $AZURE_RESOURCE_GROUP --name $AZD_ENV_NAME --query "properties.outputs.containerRegistry.value" -o tsv)
+          echo "ACR_LOGIN_SERVER=$ACR_LOGIN_SERVER" >> $GITHUB_ENV
+          export ACR_NAME=$(echo $ACR_LOGIN_SERVER | cut -d'.' -f1)
+          echo "ACR_NAME=$ACR_NAME" >> $GITHUB_ENV
+      - name: Build Docker image
+        run: |
+          docker build -t $IMAGE_NAME:$IMAGE_TAG -f src/ClaimStatusApi/Dockerfile .
+      - name: Azure CLI - Login to ACR
+        run: |
+          az acr login --name $ACR_NAME
+      - name: Tag and Push Docker image
+        run: |
+          docker tag $IMAGE_NAME:$IMAGE_TAG $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG
+          docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG
+      - name: Update Infra with Real Image
+        run: |
+          az deployment group create \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --template-file iac/main.bicep \
+            --parameters \
+              azdEnvName=$AZD_ENV_NAME \
+              claimStatusApiImage=$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG \
+              claimStatusApiPort=80 \
+              logAnalyticsRetention=30 \
+              apimPublisherEmail=$APIM_PUBLISHER_EMAIL \
+              apimPublisherName=$APIM_PUBLISHER_NAME
+  security-scan:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@v0.16.0
+        with:
+          image-ref: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+      - name: Fail on critical/high vulnerabilities
+        if: failure()
+        run: exit 1
+  deploy:
+    needs: security-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Final Infra Deploy
+        run: |
+          az deployment group create \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --template-file iac/main.bicep \
+            --parameters \
+              azdEnvName=$AZD_ENV_NAME \
+              claimStatusApiImage=$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG \
+              claimStatusApiPort=80 \
+              logAnalyticsRetention=30 \
+              apimPublisherEmail=$APIM_PUBLISHER_EMAIL \
+              apimPublisherName=$APIM_PUBLISHER_NAME

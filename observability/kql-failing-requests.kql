@@ -1,7 +1,6 @@
-// KQL: Failed requests (APIM)
-AzureDiagnostics
-| where ResourceProvider == "MICROSOFT.APIM"
-| where TimeGenerated > ago(24h)
-| where httpStatusCode >= 400
-| summarize count() by bin(TimeGenerated, 1h), httpStatusCode, requestUri_s
+// KQL: Failing Requests in Container App
+AppTraces
+| where SeverityLevel >= 3
+| where Message has "fail" or Message has "error"
+| project TimeGenerated, Message, SeverityLevel, OperationName, CloudRoleInstance
 | order by TimeGenerated desc

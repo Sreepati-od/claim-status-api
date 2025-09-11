@@ -1,19 +1,18 @@
 <policies>
-  <inbound>
-    <base />
-    <!-- Subscription key validation -->
-    <validate-subscription-key header-name="Ocp-Apim-Subscription-Key" />
-    <!-- Rate limit: 60 calls per minute per subscription -->
-    <rate-limit-by-key calls="60" renewal-period="60" increment-count="true" counter-key="@(context.Subscription?.Id ?? 'anon')" />
-    <set-backend-service base-url="https://<aca-app>.<region>.azurecontainerapps.io" />
-  </inbound>
-  <backend>
-    <base />
-  </backend>
-  <outbound>
-    <base />
-  </outbound>
-  <on-error>
-    <base />
-  </on-error>
+    <inbound>
+        <base />
+        <!-- Require subscription key -->
+        <check-header name="Ocp-Apim-Subscription-Key" failed-check-httpcode="401" failed-check-error-message="Subscription key is missing or invalid." />
+        <!-- Rate limit: 10 calls per 60 seconds per key -->
+        <rate-limit-by-key calls="10" renewal-period="60" counter-key="@(context.Subscription.Key ?? &quot;anonymous&quot;)" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
 </policies>

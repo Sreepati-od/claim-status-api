@@ -1,6 +1,5 @@
-// KQL: High latency requests (Container Insights / App)
+// KQL: High Latency Requests in Container App
 AppRequests
-| where TimeGenerated > ago(24h)
-| where Duration > 2000  // ms threshold
-| summarize avg(Duration), percentiles(Duration, 50, 95, 99) by bin(TimeGenerated, 1h), Name
-| order by TimeGenerated desc
+| where Duration > 2000 // ms
+| project TimeGenerated, Name, Duration, Success, ResultCode, OperationName, CloudRoleInstance
+| order by Duration desc

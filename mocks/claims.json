@@ -1,42 +1,4 @@
 [
-  {
-    "id": "1001",
-    "status": "Open",
-    "policyHolder": "Alice Smith",
-    "lossDate": "2025-08-01",
-    "amount": 12000.50,
-    "adjuster": "John Doe"
-  },
-  {
-    "id": "1002",
-    "status": "Closed",
-    "policyHolder": "Bob Johnson",
-    "lossDate": "2025-07-15",
-    "amount": 8500.00,
-    "adjuster": "Jane Lee"
-  },
-  {
-    "id": "1003",
-    "status": "In Review",
-    "policyHolder": "Carol White",
-    "lossDate": "2025-06-20",
-    "amount": 4300.75,
-    "adjuster": "John Doe"
-  },
-  {
-    "id": "1004",
-    "status": "Open",
-    "policyHolder": "David Brown",
-    "lossDate": "2025-09-01",
-    "amount": 15000.00,
-    "adjuster": "Jane Lee"
-  },
-  {
-    "id": "1005",
-    "status": "Pending",
-    "policyHolder": "Eve Black",
-    "lossDate": "2025-08-18",
-    "amount": 6700.20,
-    "adjuster": "John Doe"
-  }
+  { "id": "1", "status": "Approved", "amount": 1000, "customer": "John Doe" },
+  { "id": "2", "status": "Pending", "amount": 500, "customer": "Jane Smith" }
 ]

@@ -1,16 +1,11 @@
 {
-  "1001": [
-    "Insured reported water damage in kitchen. Adjuster visited on 2025-08-02. Estimate prepared. Awaiting contractor quote.",
-    "Customer called to ask about claim status. Explained process and next steps."
+  "1": [
+    "Customer called to check status.",
+    "Adjuster reviewed documents.",
+    "Approved for payment."
   ],
-  "1002": [
-    "Claim closed after payment issued. No further action required."
-  ],
-  "1003": [
-    "Initial review completed. Additional documents requested from policyholder.",
-    "Received documents. Underwriting review in progress."
-  ],
-  "1004": [
-    "Loss reported for hail damage. Inspection scheduled for 2025-09-03."
+  "2": [
+    "Initial claim submitted.",
+    "Awaiting adjuster review."
   ]
 }

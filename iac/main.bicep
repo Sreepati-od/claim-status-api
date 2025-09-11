@@ -1,125 +1,156 @@
-// main.bicep - Deploys ACR, ACA, APIM, Log Analytics, Managed Identities
+
+@description('Location for all resources')
 param location string = resourceGroup().location
-param acrName string
-param acaEnvName string
-param acaAppName string
-param apimName string
-param logAnalyticsName string
-param openAiKeyVaultName string
+@description('Environment name (injected by azd)')
+param azdEnvName string
+@description('Container image for the Claim Status API')
+param claimStatusApiImage string
+@description('Container port for the Claim Status API')
+param claimStatusApiPort int = 80
+@description('Log Analytics retention in days')
+param logAnalyticsRetention int = 30
+@description('APIM publisher email')
+param apimPublisherEmail string
+@description('APIM publisher name')
+param apimPublisherName string
 
-resource acr 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' = {
-  name: acrName
-  location: location
-  sku: {
-    name: 'Basic'
-  }
-  properties: {}
+
+var prefix = toLower(replace(azdEnvName,'_','-'))
+var envName = '${prefix}-cae'
+var logAnalyticsName = '${prefix}-logs'
+// Construct a globally unique ACR name (5-50 lowercase alphanumerics)
+var acrBase = toLower(replace('${prefix}acr','-',''))
+var acrSuffix = toLower(substring(uniqueString(resourceGroup().id, 'acr'),0,6))
+var acrRaw = '${acrBase}${acrSuffix}'
+var acrName = substring(acrRaw, 0, min(length(acrRaw),50))
+
+// Log Analytics workspace
+resource logWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
+	name: logAnalyticsName
+	location: location
+	properties: {
+		retentionInDays: logAnalyticsRetention
+		features: {
+			searchVersion: 2
+		}
+	}
+	tags: {
+		'azd-env-name': azdEnvName
+	}
 }
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-06-01' = {
-  name: logAnalyticsName
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: 30
-  }
+// Azure Container Registry
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+	name: acrName
+	location: location
+	sku: {
+		name: 'Basic'
+	}
+	properties: {
+		adminUserEnabled: true
+	}
+	tags: {
+		'azd-env-name': azdEnvName
+	}
 }
 
-resource acaEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
-  name: acaEnvName
-  location: location
-  properties: {
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalytics.properties.customerId
-        sharedKey: logAnalytics.listKeys().primarySharedKey
-      }
-    }
-  }
+// Container Apps Managed Environment
+resource managedEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
+	name: envName
+	location: location
+	properties: {
+		appLogsConfiguration: {
+			destination: 'log-analytics'
+			logAnalyticsConfiguration: {
+				customerId: logWorkspace.properties.customerId
+				sharedKey: listKeys(logWorkspace.id, '2020-08-01').primarySharedKey
+			}
+		}
+	}
+	tags: {
+		'azd-env-name': azdEnvName
+	}
 }
 
-resource acaApp 'Microsoft.App/containerApps@2023-05-01' = {
-  name: acaAppName
-  location: location
-  properties: {
-    managedEnvironmentId: acaEnv.id
-    configuration: {
-      registries: [
-        {
-          server: '${acr.name}.azurecr.io'
-        }
-      ]
-      secrets: [
-        {
-          name: 'AZURE_OPENAI_KEY'
-          value: listSecrets(resourceId('Microsoft.KeyVault/vaults', openAiKeyVaultName), '2021-06-01').value[0].secret
-        }
-      ]
-      activeRevisionsMode: 'Single'
-    }
-    template: {
-      containers: [
-        {
-          image: '${acr.name}.azurecr.io/claimstatus:latest'
-          name: 'claimstatusapi'
-          env: [
-            {
-              name: 'AZURE_OPENAI_ENDPOINT'
-              value: 'https://<your-openai-endpoint>'
-            }
-            {
-              name: 'AZURE_OPENAI_KEY'
-              secretRef: 'AZURE_OPENAI_KEY'
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: 1
-        maxReplicas: 2
-      }
-    }
-  }
+// Claim Status API Container App
+resource claimStatusApi 'Microsoft.App/containerApps@2024-03-01' = {
+	name: 'claimstatusapi'
+	location: location
+	tags: {
+		'azd-env-name': azdEnvName
+		'azd-service-name': 'claimstatusapi'
+	}
+	properties: {
+		environmentId: managedEnv.id
+		configuration: {
+			ingress: {
+				external: true
+				targetPort: claimStatusApiPort
+			}
+			secrets: [
+				{
+					name: 'acr-pwd'
+					value: acr.listCredentials().passwords[0].value
+				}
+			]
+			registries: [
+				{
+					server: acr.properties.loginServer
+					username: acr.listCredentials().username
+					passwordSecretRef: 'acr-pwd'
+				}
+			]
+		}
+		template: {
+			containers: [
+				{
+					name: 'claimstatusapi'
+					image: claimStatusApiImage
+				}
+			]
+		}
+	}
 }
 
+// API Management
 resource apim 'Microsoft.ApiManagement/service@2022-08-01' = {
-  name: apimName
-  location: location
-  sku: {
-    name: 'Consumption'
-    capacity: 0
-  }
-  properties: {
-    publisherEmail: 'admin@example.com'
-    publisherName: 'Admin'
-  }
+	name: '${prefix}-apim'
+	location: location
+	sku: {
+		name: 'Consumption'
+		capacity: 0
+	}
+	properties: {
+		publisherEmail: apimPublisherEmail
+		publisherName: apimPublisherName
+	}
+	tags: {
+		'azd-env-name': azdEnvName
+	}
 }
 
-resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: '${acaAppName}-identity'
-  location: location
+// Azure OpenAI
+resource openai 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+	name: '${prefix}-openai'
+	location: location
+	kind: 'OpenAI'
+	sku: {
+		name: 'S0'
+	}
+	properties: {
+		apiProperties: {
+			enableDynamicThrottling: true
+		}
+		networkAcls: {
+			defaultAction: 'Allow'
+		}
+	}
+	tags: {
+		'azd-env-name': azdEnvName
+	}
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2021-06-01-preview' = {
-  name: openAiKeyVaultName
-  location: location
-  properties: {
-    tenantId: subscription().tenantId
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    accessPolicies: []
-  }
-}
 
-
-output acrName string = acr.name
-output acaEnvName string = acaEnv.name
-output acaAppName string = acaApp.name
-output apimName string = apim.name
-output logAnalyticsName string = logAnalytics.name
-output keyVaultName string = keyVault.name
+output containerRegistry string = acr.properties.loginServer
+output claimStatusApiUrl string = claimStatusApi.properties.configuration.ingress.fqdn
+output logAnalyticsWorkspaceId string = logWorkspace.id
